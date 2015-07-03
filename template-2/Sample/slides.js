@@ -1,310 +1,634 @@
-/**
- * Author : Der (http://www.ueder.net)
- * Date : 2012/04/02
- */
+/*
+  Google HTML5 slides template
 
-//window 以参数方式传进来，沙箱模式，
-//undefined定为局部变量，提高性能, 以及防止被恶意修改
-;(function(window, undefined) { 
+  Authors: Luke Mahé (code)
+           Marcin Wichary (code and design)
 
-    //使document指向参数window里的document
-    var document = window.document,
-        location = document.location;
+           Dominic Mazzoni (browser compatibility)
+           Charles Chen (ChromeVox support)
 
-    /**
-     * //扩展对象(默认值替换)
-     * @param  {object} target 默认值对象
-     * @param  {object} obj    待扩展的对象
-     * @return {object}        返回扩展后的对象
-     */
-    var extend = function (target, obj) {
-        if (obj) {
-            for (var i in target) {
-                if ((typeof obj[i]) === "undefined") {
-                    obj[i] = target[i];
-                }
-            }
-            return obj;
-        } else {
-            return target;
-        }
+  URL: http://code.google.com/p/html5slides/
+*/
+
+var PERMANENT_URL_PREFIX = '';
+
+var SLIDE_CLASSES = ['far-past', 'past', 'current', 'next', 'far-next'];
+
+var PM_TOUCH_SENSITIVITY = 15;
+
+var curSlide;
+
+/* ---------------------------------------------------------------------- */
+/* classList polyfill by Eli Grey
+ * (http://purl.eligrey.com/github/classList.js/blob/master/classList.js) */
+
+if (typeof document !== "undefined" && !("classList" in document.createElement("a"))) {
+
+(function (view) {
+
+var
+    classListProp = "classList"
+  , protoProp = "prototype"
+  , elemCtrProto = (view.HTMLElement || view.Element)[protoProp]
+  , objCtr = Object
+    strTrim = String[protoProp].trim || function () {
+    return this.replace(/^\s+|\s+$/g, "");
+  }
+  , arrIndexOf = Array[protoProp].indexOf || function (item) {
+    for (var i = 0, len = this.length; i < len; i++) {
+      if (i in this && this[i] === item) {
+        return i;
+      }
     }
-
-    /**
-     * Slides 构造函数
-     */
-    var Slides = function(config) {
-
-        //支持 Slides()直接调用
-        if (!(this instanceof Slides)) {
-            return new Slides(config);
-        }
-
-        //默认配置
-        config = extend({
-            container: '#slides', //slides的容器选择器
-            pages: '.page', //所有slide页选择器
-            hashPrefix: 'slide-', //hash里的前缀，后面为页值
-            prev: '#prev', //前一页按钮
-            next: '#next', //后一页按钮
-            changeBtn: '#changeType', //切换风格的按钮
-            changeTypes: ['slides', 'slides2'], //切换风格的class
-            typeArr: ['p-current', 'p-past', 'p-past-far', 'p-next', 'p-next-far'],
-            typeCount: 0 //默认的切换风格，对应changeTypes里的数组
-        }, config);
-
-
-        //挂载内部参数
-        this.container = document.querySelector(config.container); //slides的容器
-        this.pages = this.container.querySelectorAll(config.pages); //所有slide页
-        this.prevBtn = document.querySelector(config.prev); //上一页按钮
-        this.nextBtn = document.querySelector(config.next); //下一页按钮
-        this.hashPrefix = config.hashPrefix; //hash前缀
-        this.currentPage = null; // 当前页
-        this.totalPages = this.pages.length; //ppt总页数
-        this.changeBtn = document.querySelector(config.changeBtn); //
-        this.changeTypes = config.changeTypes; //切换type数组
-        this.typeCount = config.typeCount; //
-        this.curType = this.changeTypes[this.typeCount]; //默认切换type为第一个
-        this.typeArr = config.typeArr;
-
-        this.init();
-        
+    return -1;
+  }
+  // Vendors: please allow content code to instantiate DOMExceptions
+  , DOMEx = function (type, message) {
+    this.name = type;
+    this.code = DOMException[type];
+    this.message = message;
+  }
+  , checkTokenAndGetIndex = function (classList, token) {
+    if (token === "") {
+      throw new DOMEx(
+          "SYNTAX_ERR"
+        , "An invalid or illegal string was specified"
+      );
+    }
+    if (/\s/.test(token)) {
+      throw new DOMEx(
+          "INVALID_CHARACTER_ERR"
+        , "String contains an invalid character"
+      );
+    }
+    return arrIndexOf.call(classList, token);
+  }
+  , ClassList = function (elem) {
+    var
+        trimmedClasses = strTrim.call(elem.className)
+      , classes = trimmedClasses ? trimmedClasses.split(/\s+/) : []
+    ;
+    for (var i = 0, len = classes.length; i < len; i++) {
+      this.push(classes[i]);
+    }
+    this._updateClassName = function () {
+      elem.className = this.toString();
     };
+  }
+  , classListProto = ClassList[protoProp] = []
+  , classListGetter = function () {
+    return new ClassList(this);
+  }
+;
+// Most DOMException implementations don't allow calling DOMException's toString()
+// on non-DOMExceptions. Error's toString() is sufficient here.
+DOMEx[protoProp] = Error[protoProp];
+classListProto.item = function (i) {
+  return this[i] || null;
+};
+classListProto.contains = function (token) {
+  token += "";
+  return checkTokenAndGetIndex(this, token) !== -1;
+};
+classListProto.add = function (token) {
+  token += "";
+  if (checkTokenAndGetIndex(this, token) === -1) {
+    this.push(token);
+    this._updateClassName();
+  }
+};
+classListProto.remove = function (token) {
+  token += "";
+  var index = checkTokenAndGetIndex(this, token);
+  if (index !== -1) {
+    this.splice(index, 1);
+    this._updateClassName();
+  }
+};
+classListProto.toggle = function (token) {
+  token += "";
+  if (checkTokenAndGetIndex(this, token) === -1) {
+    this.add(token);
+  } else {
+    this.remove(token);
+  }
+};
+classListProto.toString = function () {
+  return this.join(" ");
+};
 
-    /**
-     * 扩展构造函数
-     * @type {Object}
-     */
-    Slides.prototype = {
+if (objCtr.defineProperty) {
+  var classListPropDesc = {
+      get: classListGetter
+    , enumerable: true
+    , configurable: true
+  };
+  try {
+    objCtr.defineProperty(elemCtrProto, classListProp, classListPropDesc);
+  } catch (ex) { // IE 8 doesn't support enumerable:true
+    if (ex.number === -0x7FF5EC54) {
+      classListPropDesc.enumerable = false;
+      objCtr.defineProperty(elemCtrProto, classListProp, classListPropDesc);
+    }
+  }
+} else if (objCtr[protoProp].__defineGetter__) {
+  elemCtrProto.__defineGetter__(classListProp, classListGetter);
+}
 
-        /**
-         * 还原contructor
-         * @type {Function}
-         */
-        constructor: Slides, 
+}(self));
 
-        /**
-         * 初始化
-         * @return {undefined} 
-         */
-        init: function() {
-            var self = this;
+}
+/* ---------------------------------------------------------------------- */
 
-            self.bindUI(); //用户事件绑定
-            self.container.className = self.curType; //
-            self.currentPage = self._getPageFromHash(); //从hash获取在第几页
-            self._emptyClass();//先清空设置过的class
-            self.gotoPage(self.currentPage); //跳转到第几页
-            self._setPageToHash(self.currentPage); //设置hash状态
+/* Slide movement */
 
+function getSlideEl(no) {
+  if ((no < 0) || (no >= slideEls.length)) {
+    return null;
+  } else {
+    return slideEls[no];
+  }
+};
 
-        },
+function updateSlideClass(slideNo, className) {
+  var el = getSlideEl(slideNo);
 
-        /**
-         * 事件绑定
-         * @return {undefined} 
-         */
-        bindUI: function() {
-            var self = this;
+  if (!el) {
+    return;
+  }
 
-            //前一页
-            this.prevBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                self.prev();
-            }, false);
+  if (className) {
+    el.classList.add(className);
+  }
 
-            //后一页
-            this.nextBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                self.next();
-            }, false);
+  for (var i in SLIDE_CLASSES) {
+    if (className != SLIDE_CLASSES[i]) {
+      el.classList.remove(SLIDE_CLASSES[i]);
+    }
+  }
+};
 
-            // onhashchange handle 哈希驱动事件
-            // 所有的上一页下一页跳转到几页都只改变hash值，然后由hashchange事件驱动页面跳转
-            window.addEventListener('hashchange', function(e) {
-                var cp = self._getPageFromHash();
-                self.currentPage = cp;
-                self._emptyClass(); //先清空设置过的class
-                self.gotoPage(cp);
-            }, false);
+function updateSlides() {
+  for (var i = 0; i < slideEls.length; i++) {
+    switch (i) {
+      case curSlide - 2:
+        updateSlideClass(i, 'far-past');
+        break;
+      case curSlide - 1:
+        updateSlideClass(i, 'past');
+        break;
+      case curSlide:
+        updateSlideClass(i, 'current');
+        break;
+      case curSlide + 1:
+        updateSlideClass(i, 'next');
+        break;
+      case curSlide + 2:
+        updateSlideClass(i, 'far-next');
+        break;
+      default:
+        updateSlideClass(i);
+        break;
+    }
+  }
 
-            //切换风格
-            this.changeBtn.addEventListener('click', function(e) {  
-                e.preventDefault();
+  triggerLeaveEvent(curSlide - 1);
+  triggerEnterEvent(curSlide);
 
-                self._changeType();
-                self.container.className = self.curType;
-            }, false);
+  window.setTimeout(function() {
+    // Hide after the slide
+    disableSlideFrames(curSlide - 2);
+  }, 301);
 
-            //添加键盘事件
-            window.addEventListener('keydown', function(e) {
+  enableSlideFrames(curSlide - 1);
+  enableSlideFrames(curSlide + 2);
 
-                switch (e.keyCode) {
-                    case 39: // right arrow
-                    case 40: // down arrow
-                    case 13: // Enter
-                    case 32: // space
-                    case 34: // PgDn
-                        self.next();
-                        break;
+  if (isChromeVoxActive()) {
+    speakAndSyncToNode(slideEls[curSlide]);
+  }
 
-                    case 37: // left arrow
-                    case 38: // top arrow
-                    // case 8: // Backspace
-                    case 33: // PgUp
-                    case 27: //Esc
-                        self.prev();
-                        break;
-                }
+  updateHash();
+};
 
-            }, false)
+function buildNextItem() {
+  var toBuild  = slideEls[curSlide].querySelectorAll('.to-build');
 
-        },
+  if (!toBuild.length) {
+    return false;
+  }
 
-        /**
-         * 转换切换风格
-         * @return {undefined} 
-         */
-        _changeType: function() {   
-            var self = this;
+  toBuild[0].classList.remove('to-build');
 
-            self.typeCount = (self.typeCount === self.changeTypes.length - 1)
-                ? 0 : self.typeCount + 1;
+  if (isChromeVoxActive()) {
+    speakAndSyncToNode(toBuild[0]);
+  }
 
-            self.curType = self.changeTypes[self.typeCount];
-        },
+  return true;
+};
 
-        /**
-         * 从hash获取当前到第几页
-         * @return {number} 返回第几页的数字
-         */
-        _getPageFromHash: function() {
-            var self = this,
-                hashPrefix = self.hashPrefix,
-                tp = self.totalPages, //总slides数
-                hash = location.hash.slice(1), //获取hash去掉#之后的字符串
-                page = hashPrefix === '' ? hash : hash.split(hashPrefix)[1], //前缀为空直接取hash，否则取前缀之后的值
-                pageN = parseInt(page, 10); //转为number
+function prevSlide() {
+  if (curSlide > 0) {
+    curSlide--;
 
-            //page为不合法或为0时，统一返回1
-            if (isNaN(pageN) || pageN < 1) {
-                pageN = 1;
-            } 
-            //page大于总slides数，统一返回最大slides数
-            else if (pageN > tp) {
-                pageN = tp;
-            }
+    updateSlides();
+  }
+};
 
-            return pageN;
-        },
+function nextSlide() {
+  if (buildNextItem()) {
+    return;
+  }
 
-        /**
-         * 设置hash
-         * @param {number} n 设置hash到第n页
-         */
-        _setPageToHash: function(n) {
-            var self = this,
-                hashPrefix = self.hashPrefix;
+  if (curSlide < slideEls.length - 1) {
+    curSlide++;
 
-            location.hash = '#' + hashPrefix + n;
-        },
+    updateSlides();
+  }
+};
 
-        /**
-         * 清空class
-         * @return {undefined} 
-         */
-        _emptyClass: function() {
-            var classNameList = this.typeArr,
-                i = 0,
-                len = this.totalPages,
-                l = classNameList.length,
-                pages = this.pages;
+/* Slide events */
 
-            for (; i < len; i++){
-                var el = pages[i];
+function triggerEnterEvent(no) {
+  var el = getSlideEl(no);
+  if (!el) {
+    return;
+  }
 
-                for (var j = 0; j < l; j++) {
-                    el.classList.remove(classNameList[j]);
-                }
-            }            
-        },
+  var onEnter = el.getAttribute('onslideenter');
+  if (onEnter) {
+    new Function(onEnter).call(el);
+  }
 
-        /**
-         * 跳转到第n页
-         * @param  {number} n 跳转到的页数
-         * @return {undefined}   
-         */
-        gotoPage: function(n) {
-            var self = this,
-                pages = self.pages,
-                cur = n - 1, //当前页, 转为0起始
-                past = n - 2, //上一页
-                pastFar = n - 3, //上上一页
-                next = n, //下一页
-                nextFar = n + 1, //下下一页
-                i = 0, len = self.totalPages,
-                classNameList = this.typeArr;
+  var evt = document.createEvent('Event');
+  evt.initEvent('slideenter', true, true);
+  evt.slideNumber = no + 1; // Make it readable
 
+  el.dispatchEvent(evt);
+};
 
-            //改变当前slide以及前后各两个slide的className，
-            //再利用css3 的translate偏离位置 + transition动画
-            for (; i < len; i++) {
-                var page = pages[i];
+function triggerLeaveEvent(no) {
+  var el = getSlideEl(no);
+  if (!el) {
+    return;
+  }
 
-                switch (i) {
-                    case cur: 
-                        page.classList.add(classNameList[0]);
-                        break;
+  var onLeave = el.getAttribute('onslideleave');
+  if (onLeave) {
+    new Function(onLeave).call(el);
+  }
 
-                    case past:
-                        page.classList.add(classNameList[1]);
-                        break;
+  var evt = document.createEvent('Event');
+  evt.initEvent('slideleave', true, true);
+  evt.slideNumber = no + 1; // Make it readable
 
-                    case pastFar:
-                        page.classList.add(classNameList[2]);
-                        break;
+  el.dispatchEvent(evt);
+};
 
-                    case next:
-                        page.classList.add(classNameList[3]);
-                        break;
+/* Touch events */
 
-                    case nextFar:
-                        page.classList.add(classNameList[4]);
-                        break;
-                }
-            }
-        },
+function handleTouchStart(event) {
+  if (event.touches.length == 1) {
+    touchDX = 0;
+    touchDY = 0;
 
-        /**
-         * 前一页
-         * @return {undefined} 
-         */
-        prev: function() {
-            var cp = this.currentPage;
+    touchStartX = event.touches[0].pageX;
+    touchStartY = event.touches[0].pageY;
 
-            if (cp === 1) return; //边界
+    document.body.addEventListener('touchmove', handleTouchMove, true);
+    document.body.addEventListener('touchend', handleTouchEnd, true);
+  }
+};
 
-            this.currentPage--;
-            this._setPageToHash(this.currentPage);
-        },
+function handleTouchMove(event) {
+  if (event.touches.length > 1) {
+    cancelTouch();
+  } else {
+    touchDX = event.touches[0].pageX - touchStartX;
+    touchDY = event.touches[0].pageY - touchStartY;
+  }
+};
 
-        /**
-         * 后一页
-         * @return {undefined} 
-         */
-        next: function() {
-            var tp = this.totalPages,
-                cp = this.currentPage;
+function handleTouchEnd(event) {
+  var dx = Math.abs(touchDX);
+  var dy = Math.abs(touchDY);
 
-            if (cp === tp) return; //边界
+  if ((dx > PM_TOUCH_SENSITIVITY) && (dy < (dx * 2 / 3))) {
+    if (touchDX > 0) {
+      prevSlide();
+    } else {
+      nextSlide();
+    }
+  }
 
-            this.currentPage++;
-            this._setPageToHash(this.currentPage);
-        }
-    };
+  cancelTouch();
+};
 
-    //将Slides暴露到全局
-    window.Slides = Slides;
+function cancelTouch() {
+  document.body.removeEventListener('touchmove', handleTouchMove, true);
+  document.body.removeEventListener('touchend', handleTouchEnd, true);
+};
 
-})(window);
+/* Preloading frames */
+
+function disableSlideFrames(no) {
+  var el = getSlideEl(no);
+  if (!el) {
+    return;
+  }
+
+  var frames = el.getElementsByTagName('iframe');
+  for (var i = 0, frame; frame = frames[i]; i++) {
+    disableFrame(frame);
+  }
+};
+
+function enableSlideFrames(no) {
+  var el = getSlideEl(no);
+  if (!el) {
+    return;
+  }
+
+  var frames = el.getElementsByTagName('iframe');
+  for (var i = 0, frame; frame = frames[i]; i++) {
+    enableFrame(frame);
+  }
+};
+
+function disableFrame(frame) {
+  frame.src = 'about:blank';
+};
+
+function enableFrame(frame) {
+  var src = frame._src;
+
+  if (frame.src != src && src != 'about:blank') {
+    frame.src = src;
+  }
+};
+
+function setupFrames() {
+  var frames = document.querySelectorAll('iframe');
+  for (var i = 0, frame; frame = frames[i]; i++) {
+    frame._src = frame.src;
+    disableFrame(frame);
+  }
+
+  enableSlideFrames(curSlide);
+  enableSlideFrames(curSlide + 1);
+  enableSlideFrames(curSlide + 2);
+};
+
+function setupInteraction() {
+  /* Clicking and tapping */
+
+  var el = document.createElement('div');
+  el.className = 'slide-area';
+  el.id = 'prev-slide-area';
+  el.addEventListener('click', prevSlide, false);
+  document.querySelector('section.slides').appendChild(el);
+
+  var el = document.createElement('div');
+  el.className = 'slide-area';
+  el.id = 'next-slide-area';
+  el.addEventListener('click', nextSlide, false);
+  document.querySelector('section.slides').appendChild(el);
+
+  /* Swiping */
+
+  document.body.addEventListener('touchstart', handleTouchStart, false);
+}
+
+/* ChromeVox support */
+
+function isChromeVoxActive() {
+  if (typeof(cvox) == 'undefined') {
+    return false;
+  } else {
+    return true;
+  }
+};
+
+function speakAndSyncToNode(node) {
+  if (!isChromeVoxActive()) {
+    return;
+  }
+
+  cvox.ChromeVox.navigationManager.switchToStrategy(
+      cvox.ChromeVoxNavigationManager.STRATEGIES.LINEARDOM, 0, true);
+  cvox.ChromeVox.navigationManager.syncToNode(node);
+  cvox.ChromeVoxUserCommands.finishNavCommand('');
+  var target = node;
+  while (target.firstChild) {
+    target = target.firstChild;
+  }
+  cvox.ChromeVox.navigationManager.syncToNode(target);
+};
+
+function speakNextItem() {
+  if (!isChromeVoxActive()) {
+    return;
+  }
+
+  cvox.ChromeVox.navigationManager.switchToStrategy(
+      cvox.ChromeVoxNavigationManager.STRATEGIES.LINEARDOM, 0, true);
+  cvox.ChromeVox.navigationManager.next(true);
+  if (!cvox.DomUtil.isDescendantOfNode(
+      cvox.ChromeVox.navigationManager.getCurrentNode(), slideEls[curSlide])){
+    var target = slideEls[curSlide];
+    while (target.firstChild) {
+      target = target.firstChild;
+    }
+    cvox.ChromeVox.navigationManager.syncToNode(target);
+    cvox.ChromeVox.navigationManager.next(true);
+  }
+  cvox.ChromeVoxUserCommands.finishNavCommand('');
+};
+
+function speakPrevItem() {
+  if (!isChromeVoxActive()) {
+    return;
+  }
+
+  cvox.ChromeVox.navigationManager.switchToStrategy(
+      cvox.ChromeVoxNavigationManager.STRATEGIES.LINEARDOM, 0, true);
+  cvox.ChromeVox.navigationManager.previous(true);
+  if (!cvox.DomUtil.isDescendantOfNode(
+      cvox.ChromeVox.navigationManager.getCurrentNode(), slideEls[curSlide])){
+    var target = slideEls[curSlide];
+    while (target.lastChild){
+      target = target.lastChild;
+    }
+    cvox.ChromeVox.navigationManager.syncToNode(target);
+    cvox.ChromeVox.navigationManager.previous(true);
+  }
+  cvox.ChromeVoxUserCommands.finishNavCommand('');
+};
+
+/* Hash functions */
+
+function getCurSlideFromHash() {
+  var slideNo = parseInt(location.hash.substr(1));
+
+  if (slideNo) {
+    curSlide = slideNo - 1;
+  } else {
+    curSlide = 0;
+  }
+};
+
+function updateHash() {
+  location.replace('#' + (curSlide + 1));
+};
+
+/* Event listeners */
+
+function handleBodyKeyDown(event) {
+  switch (event.keyCode) {
+    case 39: // right arrow
+    case 13: // Enter
+    case 32: // space
+    case 34: // PgDn
+      nextSlide();
+      event.preventDefault();
+      break;
+
+    case 37: // left arrow
+    case 8: // Backspace
+    case 33: // PgUp
+      prevSlide();
+      event.preventDefault();
+      break;
+
+    case 40: // down arrow
+      if (isChromeVoxActive()) {
+        speakNextItem();
+      } else {
+        nextSlide();
+      }
+      event.preventDefault();
+      break;
+
+    case 38: // up arrow
+      if (isChromeVoxActive()) {
+        speakPrevItem();
+      } else {
+        prevSlide();
+      }
+      event.preventDefault();
+      break;
+  }
+};
+
+function addEventListeners() {
+  document.addEventListener('keydown', handleBodyKeyDown, false);
+};
+
+/* Initialization */
+
+function addPrettify() {
+  var els = document.querySelectorAll('pre');
+  for (var i = 0, el; el = els[i]; i++) {
+    if (!el.classList.contains('noprettyprint')) {
+      el.classList.add('prettyprint');
+    }
+  }
+
+  var el = document.createElement('script');
+  el.type = 'text/javascript';
+  el.src = PERMANENT_URL_PREFIX + 'prettify.js';
+  el.onload = function() {
+    prettyPrint();
+  }
+  document.body.appendChild(el);
+};
+
+function addFontStyle() {
+  var el = document.createElement('link');
+  el.rel = 'stylesheet';
+  el.type = 'text/css';
+  el.href = 'http://fonts.googleapis.com/css?family=' +
+            'Open+Sans:regular,semibold,italic,italicsemibold|Droid+Sans+Mono';
+
+  document.body.appendChild(el);
+};
+
+function addGeneralStyle() {
+  var el = document.createElement('link');
+  el.rel = 'stylesheet';
+  el.type = 'text/css';
+  el.href = PERMANENT_URL_PREFIX + 'styles.css';
+  document.body.appendChild(el);
+
+  var el = document.createElement('meta');
+  el.name = 'viewport';
+  el.content = 'width=1100,height=750';
+  document.querySelector('head').appendChild(el);
+
+  var el = document.createElement('meta');
+  el.name = 'apple-mobile-web-app-capable';
+  el.content = 'yes';
+  document.querySelector('head').appendChild(el);
+};
+
+function makeBuildLists() {
+  for (var i = curSlide, slide; slide = slideEls[i]; i++) {
+    var items = slide.querySelectorAll('.build > *');
+    for (var j = 0, item; item = items[j]; j++) {
+      if (item.classList) {
+        item.classList.add('to-build');
+      }
+    }
+  }
+};
+
+function handleDomLoaded() {
+  slideEls = document.querySelectorAll('section.slides > article');
+
+  setupFrames();
+
+  addFontStyle();
+  addGeneralStyle();
+  addPrettify();
+  addEventListeners();
+
+  updateSlides();
+
+  setupInteraction();
+  makeBuildLists();
+
+  document.body.classList.add('loaded');
+};
+
+function initialize() {
+  getCurSlideFromHash();
+
+  if (window['_DEBUG']) {
+    PERMANENT_URL_PREFIX = '../';
+  }
+
+  if (window['_DCL']) {
+    handleDomLoaded();
+  } else {
+    document.addEventListener('DOMContentLoaded', handleDomLoaded, false);
+  }
+}
+
+// If ?debug exists then load the script relative instead of absolute
+if (!window['_DEBUG'] && document.location.href.indexOf('?debug') !== -1) {
+  document.addEventListener('DOMContentLoaded', function() {
+    // Avoid missing the DomContentLoaded event
+    window['_DCL'] = true
+  }, false);
+
+  window['_DEBUG'] = true;
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src = '../slides.js';
+  var s = document.getElementsByTagName('script')[0];
+  s.parentNode.insertBefore(script, s);
+
+  // Remove this script
+  s.parentNode.removeChild(s);
+} else {
+  initialize();
+}
