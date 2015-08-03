@@ -1,0 +1,220 @@
+<h2 id="android-dyanamic-loading-apk">Android Dyanamic Loading Apk</h2>
+
+<p><div class="toc">
+<ul>
+<li><ul>
+<li><a href="#android-dyanamic-loading-apk">Android Dyanamic Loading Apk</a><ul>
+<li><a href="#links">Links</a></li>
+<li><a href="#动态加载的需求">动态加载的需求</a><ul>
+<li><a href="#入门">入门</a></li>
+<li><a href="#进阶代理模式">进阶（代理模式）</a></li>
+<li><a href="#终极玩法非代理模式">终极玩法（非代理模式）</a></li>
+</ul>
+</li>
+<li><a href="#代理模式">代理模式</a><ul>
+<li><a href="#相关术语">相关术语</a></li>
+<li><a href="#动态加载apk并且调用某个activity的方法">动态加载APK并且调用某个Activity的方法</a></li>
+<li><a href="#启动没有注册的插件activity的两个主要难题">启动没有注册的插件Activity的两个主要难题：</a><ul>
+<li><a href="#插件activity如何使用r文件">插件Activity如何使用R文件</a></li>
+<li><a href="#管理插件activity的生命周期">管理插件Activity的生命周期</a></li>
+</ul>
+</li>
+<li><a href="#多插件apk的管理">多插件APK的管理</a></li>
+</ul>
+</li>
+<li><a href="#非代理模式">非代理模式</a><ul>
+<li><a href="#相关术语-1">相关术语</a></li>
+<li><a href="#核心技术">核心技术</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</p>
+
+
+
+<h3 id="links">Links</h3>
+
+<p><a href="https://github.com/singwhatiwanna/dynamic-load-apk">dynamic-load-apk</a> <br>
+<a href="https://github.com/houkx/android-pluginmgr">android-pluginmgr</a> <br>
+<a href="https://github.com/FinalLody/Direct-Load-apk">Direct-Load-apk</a> <br>
+<a href="https://github.com/alibaba/dexposed">alibaba dexposed</a></p>
+
+
+
+<h3 id="动态加载的需求">动态加载的需求</h3>
+
+
+
+<h4 id="入门">入门</h4>
+
+<p>不覆盖安装，更改APK里的代码逻辑</p>
+
+
+
+<h4 id="进阶代理模式">进阶（代理模式）</h4>
+
+<p>主APK可以启动未安装的插件APK； <br>
+插件APK也可以作为一个普通APK安装并且启动，但需要做特殊的处理</p>
+
+
+
+<h4 id="终极玩法非代理模式">终极玩法（非代理模式）</h4>
+
+<p>主APK可以启动任意第三方普通APK</p>
+
+
+
+<h3 id="代理模式">代理模式</h3>
+
+<p>代表项目：<a href="https://github.com/singwhatiwanna/dynamic-load-apk">dynamic-load-apk</a></p>
+
+
+
+<h4 id="相关术语">相关术语</h4>
+
+<p>用<code>DexClassLoader</code>加载代码，用<code>AssetManager</code>加载资源 <br>
+<code>代理Activity</code>  <code>插件Activity</code>  <code>生命周期接口</code> <code>多插件APK的管理</code></p>
+
+
+
+<h4 id="动态加载apk并且调用某个activity的方法">动态加载APK并且调用某个Activity的方法</h4>
+
+<p>用<code>DexClassLoader</code>将APK加载到当前的运行时环境（其实是加载APK里的DEX）并且获得对应的<code>DexClassLoader</code>实例，通过<code>反射</code>从<code>DexClassLoader</code>实例里获取插件APK里的Activity实例（没有生命周期，不是不是系统组件，只是一般Java类的实例）。</p>
+
+
+
+<pre class="prettyprint"><code class="language-JAVA hljs javascript">protected <span class="hljs-keyword">void</span> launchTargetActivity(final <span class="hljs-built_in">String</span> className) {
+        Log.d(TAG, <span class="hljs-string">"start launchTargetActivity, className="</span> + className);
+        File dexOutputDir = <span class="hljs-keyword">this</span>.getDir(<span class="hljs-string">"dex"</span>, <span class="hljs-number">0</span>);
+        final <span class="hljs-built_in">String</span> dexOutputPath = dexOutputDir.getAbsolutePath();
+        ClassLoader localClassLoader = ClassLoader.getSystemClassLoader();
+        DexClassLoader dexClassLoader = <span class="hljs-keyword">new</span> DexClassLoader(mDexPath,
+                dexOutputPath, <span class="hljs-literal">null</span>, localClassLoader);
+        <span class="hljs-keyword">try</span> {
+            Class&lt;?&gt; localClass = dexClassLoader.loadClass(className);
+            Constructor&lt;?&gt; localConstructor = localClass
+                    .getConstructor(<span class="hljs-keyword">new</span> Class[] {});
+            <span class="hljs-built_in">Object</span> instance = localConstructor.newInstance(<span class="hljs-keyword">new</span> <span class="hljs-built_in">Object</span>[] {});
+            Log.d(TAG, <span class="hljs-string">"instance = "</span> + instance);
+
+            Method setProxy = localClass.getMethod(<span class="hljs-string">"setProxy"</span>,
+                    <span class="hljs-keyword">new</span> Class[] { Activity.class });
+            setProxy.setAccessible(<span class="hljs-literal">true</span>);
+            setProxy.invoke(instance, <span class="hljs-keyword">new</span> <span class="hljs-built_in">Object</span>[] { <span class="hljs-keyword">this</span> });
+
+            Method onCreate = localClass.getDeclaredMethod(<span class="hljs-string">"onCreate"</span>,
+                    <span class="hljs-keyword">new</span> Class[] { Bundle.class });
+            onCreate.setAccessible(<span class="hljs-literal">true</span>);
+            Bundle bundle = <span class="hljs-keyword">new</span> Bundle();
+            bundle.putInt(FROM, FROM_EXTERNAL);
+            onCreate.invoke(instance, <span class="hljs-keyword">new</span> <span class="hljs-built_in">Object</span>[] { bundle });
+        } <span class="hljs-keyword">catch</span> (Exception e) {
+            e.printStackTrace();
+        }
+    }</code></pre>
+
+
+
+<h4 id="启动没有注册的插件activity的两个主要难题">启动没有注册的插件Activity的两个主要难题：</h4>
+
+<ul>
+<li>如何加载res资源（使用R文件）</li>
+<li>插件Activity的生命周期的控制</li>
+</ul>
+
+
+
+<h5 id="插件activity如何使用r文件">插件Activity如何使用R文件</h5>
+
+<p>Activity是通过<code>AssetManager</code>来加载APK里的res资源，并且通过<code>Resources</code>来管理这些资源。<code>Resources</code>是通过<code>AssetManager</code>创建的，所以对于插件Activity，可以通过<code>反射</code>的方法创建<code>AssetManager</code>，加载插件APK的资源，并且创建出<code>Resources</code>，这样插件Activity里就可以正常使用R文件了。</p>
+
+
+
+<pre class="prettyprint"><code class="language-JAVA hljs avrasm">try {
+            AssetManager assetManager = AssetManager<span class="hljs-preprocessor">.class</span><span class="hljs-preprocessor">.newInstance</span>()<span class="hljs-comment">;</span>
+            Method addAssetPath = assetManager<span class="hljs-preprocessor">.getClass</span>()<span class="hljs-preprocessor">.getMethod</span>(<span class="hljs-string">"addAssetPath"</span>, String<span class="hljs-preprocessor">.class</span>)<span class="hljs-comment">;</span>
+            addAssetPath<span class="hljs-preprocessor">.invoke</span>(assetManager, mDexPath)<span class="hljs-comment">;</span>
+            mAssetManager = assetManager<span class="hljs-comment">;</span>
+        } catch (Exception e) {
+            e<span class="hljs-preprocessor">.printStackTrace</span>()<span class="hljs-comment">;</span>
+        }
+        Resources superRes = super<span class="hljs-preprocessor">.getResources</span>()<span class="hljs-comment">;</span>
+        mResources = new Resources(mAssetManager, superRes<span class="hljs-preprocessor">.getDisplayMetrics</span>(),
+                superRes<span class="hljs-preprocessor">.getConfiguration</span>())<span class="hljs-comment">;</span>
+        mTheme = mResources<span class="hljs-preprocessor">.newTheme</span>()<span class="hljs-comment">;</span>
+        mTheme<span class="hljs-preprocessor">.setTo</span>(super<span class="hljs-preprocessor">.getTheme</span>())<span class="hljs-comment">;</span>
+}</code></pre>
+
+<p>注意：代理Activity有自己的<code>AssetManager</code>和<code>Resources</code>用于维护自身的res资源，因此需要再实例化一个新的<code>AssetManager</code>和<code>Resources</code>用于加载插件Activity里的res资源，也就是说其实代理Activity维护了两套res资源，并不是把新的res资源和原有的res资源合并了（所以不怕R.id重复），对两个res资源的访问都需要用对应的<code>Resources</code>。（其实有3套，Android系统会加载一套framework-res.apk资源）</p>
+
+
+
+<h5 id="管理插件activity的生命周期">管理插件Activity的生命周期</h5>
+
+<p>用代理Activity的生命周期同步控制插件Activity的生命周期</p>
+
+<ul>
+<li>在代理Activity生命周期里用反射调用插件Activity相应生命周期的接口</li>
+<li>把插件Activity的生命周期抽象成接口，在代理Activity的生命周期里调用</li>
+</ul>
+
+<p>Fragment自带生命周期，用Fragment来代替Activity开发可以省去大部分生命周期的控制工作，但是会使得Activity跳转比较麻烦。</p>
+
+
+
+<h4 id="多插件apk的管理">多插件APK的管理</h4>
+
+<p>动态加载一个插件 APK需要三个对应的<code>DexClassLoader</code>、<code>AssetManager</code>、<code>Resources</code>实例，可以用组合的方式创建一个<code>PluginPackage</code>类存放这三个变量，再创建一个管理类<code>PluginManager</code>，用HashMap</p>
+
+<h3 id="非代理模式">非代理模式</h3>
+
+<p>代表项目：<a href="https://github.com/houkx/android-pluginmgr">android-pluginmgr</a></p>
+
+
+
+<h4 id="相关术语-1">相关术语</h4>
+
+<p><code>dexmaker</code>  <code>ActivityClassGenerator</code> <br>
+<code>CJClassLoader</code>  <code>PluginClassLoader</code>  <code>proxyActivityLoaderMap</code></p>
+
+
+
+<h4 id="核心技术">核心技术</h4>
+
+<p>在<code>宿主Apk</code>的Manifest文件注册一个本地并不存在的PlugActivity，然后动态加载<code>插件APK</code>，每当启动<code>插件APK</code>里的任何一个Activity（比如GameActivity）时，都会动态创建一个PlugActivity类继承GameActivity，这个PlugActivity就具有GameActivity的所有特性了，同时由于是在宿主APK的Manifest中注册好的了，所以具有标准Activity的生命周期，而且因为不是使用代理Activity的方式，所以PlugActivity（其实就是GameActivity）也能直接使用自己的资源文件。</p>
+
+<p>一般的Activity运作方式是创建一个Activity，然后在Manifest中注册，然后再启动该Activity，<code>pluginmgr</code>则是先在Manifest中注册一个通用的PlugActivity，每次需要启动一个Activity时都动态生成一个PlugActivity去继承这个Activity，从而达到只需注册一个PlugActivity便可以完成多个Activity的功能。</p>
+
+
+
+<h4 id="如何动态创建activity其实是创建dex">如何动态创建Activity（其实是创建dex）</h4>
+
+<p>用Google提供的<code>dexmaker</code>，在<code>pluginmgr</code>中，创建工作封装在<code>ActivityClassGenerator</code>里。</p>
+
+
+
+<h4 id="启动插件的某个activity如何变成启动plugactivity">启动插件的某个Activity，如何变成启动PlugActivity</h4>
+
+<p>偷梁换柱，宿主APK启动的时候，用<code>反射</code>替换其Application的ClassLoader（<code>pluginmgr</code>中用<code>CJClassLoader</code>替换），重写<code>loadClass</code>方法，在加载插件Activity时偷换成PlugActivity。</p>
+
+<p><code>pluginmgr</code>项目中有三种ClassLoader，一是用于替换宿主APK的Application的<code>CJClassLoader</code>，二是用于加载插件APK的<code>PluginClassLoader</code>，再来是用于加载启动插件Activity时动态生成的PlugActivity的dex包的<code>DexClassLoader</code>（存放在Map集合<code>proxyActivityLoaderMap</code>里面）。其中<code>CJClassLoader</code>是<code>PluginClassLoader</code>的Parent，而<code>PluginClassLoader</code>又是第三种<code>DexClassLoader</code>的Parent。</p>
+
+<p>ClassLoader类加载Class的时候，会先使用Parent的<code>ClassLoader</code>，但Parent不能完成加载工作时，才会调用Child的<code>ClassLoader</code>去完成工作，具体工作方式见ClassLoader的<code>双亲代理</code>模式。</p>
+
+<blockquote>
+  <p>java.lang.ClassLoader <br>
+  Loads classes and resources from a repository. One or more class loaders are installed at runtime. These are consulted whenever the runtime system needs a specific class that is not yet available in-memory. Typically, class loaders are grouped into a tree where child class loaders delegate all requests to parent class loaders. Only if the parent class loader cannot satisfy the request, the child class loader itself tries to handle it.</p>
+</blockquote>
+
+<p>所以每加载一个Activity的时候都会调用到最上级的<code>CJClassLoader</code>的<code>loadClass</code>方法，从而保证启动插件Activity的时候能顺利替换成PlugActivity。当然如何控制着三种ClassLoader的加载工作，也是<code>pluginmgr</code>项目的设计难度之一。</p>
+
+
+
+<h3 id="代理模式与非代理模式的区别">代理模式与非代理模式的区别</h3>
+
+<p>代理模式是使用一个代理Activity去完成本应该由插件Activity完成的工作，但是</p>
